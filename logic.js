@@ -2,8 +2,7 @@
 (function (root) {
   'use strict';
 
-  // Regla 2: piezas de 2, 4, 8 y 16 casillas, cada una con su color.
-  // Casi todas se construyen con bloques de 2 para que encajen entre sí.
+  // Piezas de 2, 4, 8 y 16 casillas, cada una con su color.
   const DEFS = [
     { id: 'D2', name: 'Dominó', color: '#ffd166', shape: ['XX'] },
     { id: 'I4', name: 'Barra 4', color: '#4cc9f0', shape: ['XXXX'] },
@@ -22,8 +21,7 @@
     { id: 'S16', name: 'Escalón', color: '#a3b18a', shape: ['XXXX..', 'XXXX..', '..XXXX', '..XXXX'] },
   ];
 
-  // Regla 3: nada de azar. Lo que se ofrece depende de la pieza elegida antes.
-  // Cada pieza "llama" a las que mejor la complementan para cerrar cuadrados.
+  // Nada es al azar: lo que se ofrece depende de la pieza elegida antes.
   const NEXT = {
     D2: ['O4', 'T4', 'I4'],
     I4: ['O4', 'L8', 'U8'],
@@ -43,8 +41,13 @@
   };
   const FIRST_OFFER = ['D2', 'O4', 'L8'];
   const OFFER_SIZE = 3;
-  // Una pieza usada no vuelve a ofrecerse hasta pasados estos turnos.
-  const NO_REPEAT = 3;
+  const NO_REPEAT = 3; // una pieza usada no vuelve hasta pasados 3 turnos
+  const MIN_SQUARE = 3; // lado mínimo de un cuadrado que explota
+  const COMBO_GRACE = 3; // jugadas sin explotar antes de perder la racha
+  const MAX_STARS = 3;
+  const STAR_CELLS = 16; // limpiar esto de golpe da una estrella
+  const CLEAN_BONUS = 500;
+  const SIZES = [8, 16];
 
   function parseShape(rows) {
     const cells = [];
@@ -100,48 +103,36 @@
     return out.slice(0, OFFER_SIZE);
   }
 
-  // Regla 1: las dimensiones de la cuadrícula son múltiplos de `multiple`.
-  // Prueba tamaños de casilla entre minCell y maxCell. Entre los que cubren
-  // casi toda la pantalla, se queda con el que da más casillas.
-  function gridDims(availW, availH, multiple, minCell, maxCell = minCell * 2) {
-    const minCells = Math.max(multiple, Math.ceil(8 / multiple) * multiple);
-    const fit = (px, c) => Math.max(minCells, Math.floor(px / c / multiple) * multiple);
-    const options = [];
-    for (let c = maxCell; c >= minCell; c--) {
-      const cols = fit(availW, c);
-      const rows = fit(availH, c);
-      const cell = Math.max(4, Math.floor(Math.min(availW / cols, availH / rows)));
-      options.push({ cols, rows, cell, cover: cols * rows * cell * cell });
-    }
-    const maxCover = Math.max(...options.map((o) => o.cover));
-    const best = options
-      .filter((o) => o.cover >= maxCover * 0.85)
-      .sort((a, b) => b.cols * b.rows - a.cols * a.rows || b.cover - a.cover)[0];
-    return { cols: best.cols, rows: best.rows, cell: best.cell };
+  // Lo que se ofrecería después de elegir cada pieza de la oferta actual.
+  function upcoming(state) {
+    return state.offer.map((t) => computeOffer(t, state.history.concat(t)));
   }
 
-  function newGame(cols, rows) {
+  function newGame(size) {
     return {
-      cols,
-      rows,
-      grid: new Int32Array(cols * rows),
-      pieces: new Map(),
+      size,
+      grid: new Int32Array(size * size),
+      colors: {},
       nextId: 1,
       history: [],
       offer: computeOffer(null, []),
       score: 0,
-      squares: 0,
+      combo: 0,
+      grace: 0,
+      stars: 1,
+      clears: 0,
       turns: 0,
       over: false,
     };
   }
 
   function fits(state, cells, ox, oy) {
+    const n = state.size;
     for (const [x, y] of cells) {
       const X = ox + x;
       const Y = oy + y;
-      if (X < 0 || Y < 0 || X >= state.cols || Y >= state.rows) return false;
-      if (state.grid[Y * state.cols + X] !== 0) return false;
+      if (X < 0 || Y < 0 || X >= n || Y >= n) return false;
+      if (state.grid[Y * n + X] !== 0) return false;
     }
     return true;
   }
@@ -149,8 +140,8 @@
   function canFitAnywhere(state, typeId) {
     for (let r = 0; r < 4; r++) {
       const { cells, w, h } = shapeOf(typeId, r);
-      for (let oy = 0; oy + h <= state.rows; oy++) {
-        for (let ox = 0; ox + w <= state.cols; ox++) {
+      for (let oy = 0; oy + h <= state.size; oy++) {
+        for (let ox = 0; ox + w <= state.size; ox++) {
           if (fits(state, cells, ox, oy)) return true;
         }
       }
@@ -158,49 +149,75 @@
     return false;
   }
 
-  // Un cuadrado es "exacto" si está lleno, tiene al menos 2 piezas y
-  // ninguna de ellas asoma fuera del cuadrado.
-  function checkSquare(state, x0, y0, k) {
-    const { cols, grid, pieces } = state;
-    const ids = new Set();
-    for (let y = y0; y < y0 + k; y++) {
-      for (let x = x0; x < x0 + k; x++) {
-        const v = grid[y * cols + x];
-        if (v === 0) return null;
-        ids.add(v);
+  // Todas las casillas de cuadrados llenos (lado >= 3, al menos 2 piezas)
+  // que tocan alguna de las casillas `placed`.
+  function findClears(state, placed) {
+    const n = state.size;
+    const grid = state.grid;
+    // Suma acumulada de casillas ocupadas para saber en O(1) si un cuadrado está lleno.
+    const S = new Int32Array((n + 1) * (n + 1));
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        S[(y + 1) * (n + 1) + x + 1] =
+          (grid[y * n + x] ? 1 : 0) + S[y * (n + 1) + x + 1] + S[(y + 1) * (n + 1) + x] - S[y * (n + 1) + x];
       }
     }
-    if (ids.size < 2) return null;
-    for (const id of ids) {
-      for (const idx of pieces.get(id).cells) {
-        const x = idx % cols;
-        const y = (idx - x) / cols;
-        if (x < x0 || x >= x0 + k || y < y0 || y >= y0 + k) return null;
-      }
-    }
-    return { x: x0, y: y0, size: k, ids: [...ids] };
-  }
+    const filled = (x0, y0, k) =>
+      S[(y0 + k) * (n + 1) + x0 + k] - S[y0 * (n + 1) + x0 + k] - S[(y0 + k) * (n + 1) + x0] + S[y0 * (n + 1) + x0] ===
+      k * k;
+    const pts = placed.map((i) => [i % n, Math.floor(i / n)]);
+    const minX = Math.min(...pts.map((p) => p[0]));
+    const maxX = Math.max(...pts.map((p) => p[0]));
+    const minY = Math.min(...pts.map((p) => p[1]));
+    const maxY = Math.max(...pts.map((p) => p[1]));
 
-  // Busca el mayor cuadrado exacto que contenga la pieza recién colocada.
-  function findSquare(state, pieceId) {
-    const { cols, rows } = state;
-    const cells = state.pieces.get(pieceId).cells;
-    const xs = cells.map((i) => i % cols);
-    const ys = cells.map((i) => Math.floor(i / cols));
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const need = Math.max(maxX - minX + 1, maxY - minY + 1, 2);
-    for (let k = Math.min(cols, rows); k >= need; k--) {
-      for (let y0 = Math.max(0, maxY - k + 1); y0 <= Math.min(minY, rows - k); y0++) {
-        for (let x0 = Math.max(0, maxX - k + 1); x0 <= Math.min(minX, cols - k); x0++) {
-          const sq = checkSquare(state, x0, y0, k);
-          if (sq) return sq;
+    const cells = new Set();
+    let biggest = 0;
+    for (let k = MIN_SQUARE; k <= n; k++) {
+      for (let y0 = Math.max(0, minY - k + 1); y0 <= Math.min(maxY, n - k); y0++) {
+        for (let x0 = Math.max(0, minX - k + 1); x0 <= Math.min(maxX, n - k); x0++) {
+          if (!pts.some(([x, y]) => x >= x0 && x < x0 + k && y >= y0 && y < y0 + k)) continue;
+          if (!filled(x0, y0, k)) continue;
+          const first = grid[y0 * n + x0];
+          let mixed = false;
+          for (let y = y0; y < y0 + k && !mixed; y++) {
+            for (let x = x0; x < x0 + k; x++) {
+              if (grid[y * n + x] !== first) {
+                mixed = true;
+                break;
+              }
+            }
+          }
+          if (!mixed) continue;
+          biggest = Math.max(biggest, k);
+          for (let y = y0; y < y0 + k; y++) for (let x = x0; x < x0 + k; x++) cells.add(y * n + x);
         }
       }
     }
-    return null;
+    return { cells: [...cells], biggest };
+  }
+
+  // Qué casillas explotarían si se colocara la pieza ahí (sin cambiar el estado).
+  function previewClears(state, typeId, rot, ox, oy) {
+    const { cells } = shapeOf(typeId, rot);
+    if (!fits(state, cells, ox, oy)) return null;
+    const idxs = cells.map(([x, y]) => (oy + y) * state.size + (ox + x));
+    idxs.forEach((i) => (state.grid[i] = state.nextId));
+    const res = findClears(state, idxs);
+    idxs.forEach((i) => (state.grid[i] = 0));
+    return res.cells;
+  }
+
+  function isOver(state) {
+    return state.stars === 0 && !state.offer.some((t) => canFitAnywhere(state, t));
+  }
+
+  function afterChoice(state, typeId) {
+    state.turns++;
+    state.history.push(typeId);
+    if (state.history.length > 20) state.history.shift();
+    state.offer = computeOffer(typeId, state.history);
+    state.over = isOver(state);
   }
 
   function place(state, typeId, rot, ox, oy) {
@@ -210,39 +227,62 @@
 
     const piece = PIECES[typeId];
     const id = state.nextId++;
-    const idxs = cells.map(([x, y]) => (oy + y) * state.cols + (ox + x));
+    state.colors[id] = piece.color;
+    const idxs = cells.map(([x, y]) => (oy + y) * state.size + (ox + x));
     idxs.forEach((i) => (state.grid[i] = id));
-    state.pieces.set(id, { type: typeId, color: piece.color, cells: idxs });
 
     let gained = piece.area;
-    const square = findSquare(state, id);
-    let cleared = [];
-    if (square) {
-      // Regla 4: el cuadrado desaparece y libera espacio.
-      for (const pid of square.ids) {
-        const p = state.pieces.get(pid);
-        p.cells.forEach((i) => {
-          state.grid[i] = 0;
-          cleared.push({ idx: i, color: p.color });
-        });
-        state.pieces.delete(pid);
+    const found = findClears(state, idxs);
+    const cleared = found.cells.map((i) => ({ idx: i, color: state.colors[state.grid[i]] }));
+    let starGained = false;
+    let boardClean = false;
+    if (cleared.length) {
+      state.combo++;
+      state.grace = COMBO_GRACE;
+      gained += cleared.length * 5 * state.combo;
+      cleared.forEach((c) => (state.grid[c.idx] = 0));
+      state.clears++;
+      if (cleared.length >= STAR_CELLS && state.stars < MAX_STARS) {
+        state.stars++;
+        starGained = true;
       }
-      gained += square.size * square.size * square.ids.length;
-      state.squares++;
+      if (state.grid.every((v) => v === 0)) {
+        boardClean = true;
+        gained += CLEAN_BONUS;
+      }
+    } else if (state.grace > 0 && --state.grace === 0) {
+      state.combo = 0;
     }
 
     state.score += gained;
-    state.turns++;
-    state.history.push(typeId);
-    state.offer = computeOffer(typeId, state.history);
-    state.over = !state.offer.some((t) => canFitAnywhere(state, t));
-    return { id, square, cleared, gained };
+    afterChoice(state, typeId);
+    return { id, idxs, cleared, biggest: found.biggest, gained, combo: state.combo, starGained, boardClean };
   }
 
-  function freeRatio(state) {
-    let free = 0;
-    for (let i = 0; i < state.grid.length; i++) if (state.grid[i] === 0) free++;
-    return free / state.grid.length;
+  // Gasta una estrella para "elegir" una pieza sin colocarla.
+  function discard(state, typeId) {
+    if (state.stars <= 0 || !state.offer.includes(typeId)) return false;
+    state.stars--;
+    afterChoice(state, typeId);
+    return true;
+  }
+
+  function fillRatio(state) {
+    let used = 0;
+    for (let i = 0; i < state.grid.length; i++) if (state.grid[i]) used++;
+    return used / state.grid.length;
+  }
+
+  function serialize(state) {
+    return JSON.stringify({ ...state, grid: Array.from(state.grid) });
+  }
+
+  function deserialize(text) {
+    const s = JSON.parse(text);
+    if (!SIZES.includes(s.size) || !Array.isArray(s.grid) || s.grid.length !== s.size * s.size) return null;
+    if (!Array.isArray(s.offer) || !s.offer.every((t) => PIECES[t])) return null;
+    s.grid = Int32Array.from(s.grid);
+    return s;
   }
 
   const api = {
@@ -250,15 +290,24 @@
     NEXT,
     PIECES,
     NO_REPEAT,
+    MIN_SQUARE,
+    COMBO_GRACE,
+    MAX_STARS,
+    STAR_CELLS,
+    SIZES,
     shapeOf,
     computeOffer,
-    gridDims,
+    upcoming,
     newGame,
     fits,
     canFitAnywhere,
-    findSquare,
+    findClears,
+    previewClears,
     place,
-    freeRatio,
+    discard,
+    fillRatio,
+    serialize,
+    deserialize,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Logic = api;
