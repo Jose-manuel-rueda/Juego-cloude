@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cuadrícula</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Cuadrícula</h1>
+    <div class="stats">
+      <span>Puntos <b id="score">0</b></span>
+      <span>Récord <b id="best">0</b></span>
+      <span>Cuadrados <b id="squares">0</b></span>
+      <span>Espacio libre <b id="free">100%</b></span>
+    </div>
+    <div class="controls">
+      <label>Múltiplo
+        <select id="multiple">
+          <option value="4">4</option>
+          <option value="8" selected>8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+        </select>
+      </label>
+      <button id="new">Nueva partida</button>
+      <button id="help-btn" aria-label="Reglas">?</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="board-wrap"><canvas id="board"></canvas></div>
+    <aside id="panel">
+      <div class="panel-title">Elige pieza</div>
+      <div id="offer"></div>
+      <button id="rotate">↻ Girar <kbd>R</kbd></button>
+      <div id="hint">La siguiente oferta depende de la pieza que elijas.</div>
+    </aside>
+  </main>
+
+  <dialog id="help">
+    <h2>Reglas</h2>
+    <ol>
+      <li>La cuadrícula ocupa toda la pantalla y sus lados son múltiplos del valor elegido (4, 8, 16 o 32).</li>
+      <li>Las piezas tienen 2, 4, 8 o 16 casillas, cada una con su color, y están hechas para encajar entre sí.</li>
+      <li>Nada es al azar: las 3 piezas que se te ofrecen dependen de la que elegiste antes, y una pieza usada no vuelve a salir en los siguientes 3 turnos.</li>
+      <li>Cuando varias piezas forman un <b>cuadrado exacto</b> (lleno y sin que ninguna pieza sobresalga), desaparece y recuperas ese espacio. Puntos: lado² × número de piezas.</li>
+    </ol>
+    <p>La partida termina cuando ninguna de las piezas ofrecidas cabe.</p>
+    <p class="keys"><b>Controles:</b> ratón para colocar, clic derecho o <kbd>R</kbd> para girar, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> para elegir. En móvil: toca para ver la pieza y toca otra vez en el mismo sitio para colocarla.</p>
+    <form method="dialog"><button>Jugar</button></form>
+  </dialog>
+
+  <dialog id="gameover">
+    <h2>Sin espacio</h2>
+    <p>Ninguna pieza ofrecida cabe en la cuadrícula.</p>
+    <p>Puntuación: <b id="final-score">0</b></p>
+    <form method="dialog"><button id="again">Otra partida</button></form>
+  </dialog>
+
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
