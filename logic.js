@@ -108,8 +108,11 @@
     return state.offer.map((t) => computeOffer(t, state.history.concat(t)));
   }
 
-  function newGame(size) {
-    return {
+  const GEM_COLOR = '#d9d4ff';
+
+  // level: { n, gems: [idx], moves, par, start } para el modo Retos.
+  function newGame(size, level = null) {
+    const state = {
       size,
       grid: new Int32Array(size * size),
       colors: {},
@@ -123,7 +126,26 @@
       clears: 0,
       turns: 0,
       over: false,
+      won: false,
+      level: null,
+      gemId: 0,
+      gems: 0,
+      movesLeft: 0,
     };
+    if (level) {
+      state.level = level.n;
+      state.gemId = state.nextId++;
+      state.colors[state.gemId] = GEM_COLOR;
+      level.gems.forEach((i) => (state.grid[i] = state.gemId));
+      state.gems = level.gems.length;
+      state.movesLeft = level.moves;
+      if (level.start) state.offer = computeOffer(level.start, [level.start]);
+    }
+    return state;
+  }
+
+  function isGem(state, idx) {
+    return state.gemId !== 0 && state.grid[idx] === state.gemId;
   }
 
   function fits(state, cells, ox, oy) {
@@ -208,8 +230,14 @@
     return res.cells;
   }
 
-  function isOver(state) {
-    return state.stars === 0 && !state.offer.some((t) => canFitAnywhere(state, t));
+  function isStuck(state) {
+    return !state.offer.some((t) => canFitAnywhere(state, t));
+  }
+
+  function updateOver(state) {
+    if (state.level && state.gems === 0) state.won = true;
+    state.over =
+      state.won || (state.level !== null && state.movesLeft <= 0) || (state.stars === 0 && isStuck(state));
   }
 
   function afterChoice(state, typeId) {
@@ -217,7 +245,21 @@
     state.history.push(typeId);
     if (state.history.length > 20) state.history.shift();
     state.offer = computeOffer(typeId, state.history);
-    state.over = isOver(state);
+    if (state.level) state.movesLeft--;
+    updateOver(state);
+  }
+
+  // Quita casillas del tablero y descuenta las gemas liberadas.
+  function removeCells(state, idxs) {
+    const out = [];
+    for (const i of idxs) {
+      const v = state.grid[i];
+      if (!v) continue;
+      if (v === state.gemId) state.gems--;
+      out.push({ idx: i, color: state.colors[v], gem: v === state.gemId });
+      state.grid[i] = 0;
+    }
+    return out;
   }
 
   function place(state, typeId, rot, ox, oy) {
@@ -233,14 +275,14 @@
 
     let gained = piece.area;
     const found = findClears(state, idxs);
-    const cleared = found.cells.map((i) => ({ idx: i, color: state.colors[state.grid[i]] }));
+    const cleared = removeCells(state, found.cells);
+    const gemsFreed = cleared.filter((c) => c.gem).length;
     let starGained = false;
     let boardClean = false;
     if (cleared.length) {
       state.combo++;
       state.grace = COMBO_GRACE;
-      gained += cleared.length * 5 * state.combo;
-      cleared.forEach((c) => (state.grid[c.idx] = 0));
+      gained += cleared.length * 5 * state.combo + gemsFreed * 20;
       state.clears++;
       if (cleared.length >= STAR_CELLS && state.stars < MAX_STARS) {
         state.stars++;
@@ -256,7 +298,42 @@
 
     state.score += gained;
     afterChoice(state, typeId);
-    return { id, idxs, cleared, biggest: found.biggest, gained, combo: state.combo, starGained, boardClean };
+    return {
+      id,
+      type: typeId,
+      idxs,
+      cleared,
+      gemsFreed,
+      biggest: found.biggest,
+      gained,
+      combo: state.combo,
+      starGained,
+      boardClean,
+    };
+  }
+
+  // Poderes: no gastan jugada.
+  function bomb(state, cx, cy) {
+    const n = state.size;
+    const idxs = [];
+    for (let y = cy - 1; y <= cy + 1; y++) {
+      for (let x = cx - 1; x <= cx + 1; x++) if (x >= 0 && y >= 0 && x < n && y < n) idxs.push(y * n + x);
+    }
+    return usePower(state, idxs);
+  }
+
+  function hammer(state, idx) {
+    return usePower(state, [idx]);
+  }
+
+  function usePower(state, idxs) {
+    if (state.won) return null;
+    const cleared = removeCells(state, idxs);
+    if (!cleared.length) return null;
+    const gained = cleared.length * 3;
+    state.score += gained;
+    updateOver(state);
+    return { cleared, gemsFreed: cleared.filter((c) => c.gem).length, gained };
   }
 
   // Gasta una estrella para "elegir" una pieza sin colocarla.
@@ -271,6 +348,92 @@
     let used = 0;
     for (let i = 0; i < state.grid.length; i++) if (state.grid[i]) used++;
     return used / state.grid.length;
+  }
+
+  // ---------- Progreso del jugador (entre partidas) ----------
+  const POWERS = ['bomb', 'hammer', 'undo'];
+  const MISSIONS = [
+    { type: 'clears', base: 5, step: 5, sum: true, text: (n) => `Haz ${n} explosiones` },
+    { type: 'combo', base: 3, step: 1, text: (n) => `Consigue una racha ×${n}` },
+    { type: 'square', base: 4, step: 1, max: 8, text: (n) => `Explota un cuadrado de ${n}×${n}` },
+    { type: 'cells', base: 18, step: 6, text: (n) => `Limpia ${n} casillas de una vez` },
+    { type: 'score', base: 800, step: 700, text: (n) => `Llega a ${n} puntos en una partida` },
+    { type: 'big', base: 3, step: 2, sum: true, text: (n) => `Coloca ${n} piezas de 16` },
+    { type: 'clean', base: 1, step: 1, sum: true, text: (n) => `Deja el tablero vacío ${n} ${n > 1 ? 'veces' : 'vez'}` },
+    { type: 'gems', base: 10, step: 10, sum: true, text: (n) => `Libera ${n} gemas en Retos` },
+  ];
+  const ACTIVE_MISSIONS = 3;
+
+  function missionAt(i) {
+    const t = MISSIONS[i % MISSIONS.length];
+    const tier = Math.floor(i / MISSIONS.length);
+    let target = t.base + t.step * tier;
+    if (t.max) target = Math.min(t.max, target);
+    return { id: i, type: t.type, target, progress: 0, text: t.text(target), reward: POWERS[i % POWERS.length] };
+  }
+
+  function xpForLevel(level) {
+    return 300 + level * 200;
+  }
+
+  function newProfile() {
+    return {
+      xp: 0,
+      level: 1,
+      powers: { bomb: 1, hammer: 2, undo: 1 },
+      missions: [0, 1, 2].map(missionAt),
+      nextMission: ACTIVE_MISSIONS,
+      levelStars: {},
+      best: 0,
+    };
+  }
+
+  // Aplica una jugada al perfil. Devuelve las misiones completadas y subidas de nivel.
+  function recordMove(profile, state, res) {
+    const done = [];
+    for (const m of profile.missions) {
+      const t = MISSIONS.find((x) => x.type === m.type);
+      let v = 0;
+      if (m.type === 'clears') v = res.cleared.length ? 1 : 0;
+      else if (m.type === 'combo') v = res.combo || 0;
+      else if (m.type === 'square') v = res.biggest || 0;
+      else if (m.type === 'cells') v = res.cleared.length;
+      else if (m.type === 'score') v = state.score;
+      else if (m.type === 'big') v = res.type && PIECES[res.type].area === 16 ? 1 : 0;
+      else if (m.type === 'clean') v = res.boardClean ? 1 : 0;
+      else if (m.type === 'gems') v = res.gemsFreed || 0;
+      m.progress = t.sum ? m.progress + v : Math.max(m.progress, v);
+      if (m.progress >= m.target) done.push(m);
+    }
+    for (const m of done) {
+      profile.powers[m.reward] = (profile.powers[m.reward] || 0) + 1;
+      profile.xp += 150;
+      const i = profile.missions.indexOf(m);
+      profile.missions[i] = missionAt(profile.nextMission++);
+    }
+    const levelUps = addXp(profile, res.gained || 0);
+    if (!state.level) profile.best = Math.max(profile.best, state.score);
+    return { done, levelUps };
+  }
+
+  function addXp(profile, xp) {
+    profile.xp += xp;
+    const ups = [];
+    while (profile.xp >= xpForLevel(profile.level)) {
+      profile.xp -= xpForLevel(profile.level);
+      profile.level++;
+      const gift = POWERS[profile.level % POWERS.length];
+      profile.powers[gift] = (profile.powers[gift] || 0) + 1;
+      ups.push({ level: profile.level, gift });
+    }
+    return ups;
+  }
+
+  // Estrellas de un reto superado: 3 si iguala la marca, 2 si va cerca, 1 si no.
+  function levelStars(level, movesUsed) {
+    if (movesUsed <= level.par) return 3;
+    if (movesUsed <= level.par + Math.ceil((level.moves - level.par) / 2)) return 2;
+    return 1;
   }
 
   function serialize(state) {
@@ -295,8 +458,21 @@
     MAX_STARS,
     STAR_CELLS,
     SIZES,
+    POWERS,
+    MISSIONS,
+    GEM_COLOR,
     shapeOf,
     computeOffer,
+    isGem,
+    isStuck,
+    bomb,
+    hammer,
+    missionAt,
+    xpForLevel,
+    newProfile,
+    recordMove,
+    addXp,
+    levelStars,
     upcoming,
     newGame,
     fits,

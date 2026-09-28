@@ -16,6 +16,16 @@
   const KEY_BEST = 'cuadricula-v2-best';
   const KEY_SOUND = 'cuadricula-v2-sound';
   const KEY_HELP = 'cuadricula-v2-help';
+  const KEY_PROFILE = 'cuadricula-v2-profile';
+  const LEVELS = window.LEVELS;
+  const POWER_NAMES = { bomb: 'Bomba', hammer: 'Martillo', undo: 'Deshacer' };
+  const ICONS = {
+    bomb: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="14" r="7" fill="currentColor"/><path d="M14.5 9.5l3-3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M18 5.5c1-1.2 2.6-1.1 3.4.2" fill="none" stroke="#ff8a3d" stroke-width="2" stroke-linecap="round"/><circle cx="7.5" cy="11.5" r="1.8" fill="rgba(255,255,255,.45)"/></svg>',
+    hammer: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5l9.5-9.5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M10.5 6.5l4-4 7 7-4 4z" fill="currentColor"/></svg>',
+    undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 8H3.5V3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 8a8.5 8.5 0 1 1-.5 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.2 1.3-6.6-4.9-4.6 6.6-.8z" fill="currentColor"/></svg>',
+    gem: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12l4 6-10 12L2 9z" fill="currentColor"/><path d="M2 9h20M9 3l3 18 3-18" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="1.2"/></svg>',
+  };
 
   const store = {
     get(k) {
@@ -27,7 +37,10 @@
   };
 
   let state;
-  let best = Number(store.get(KEY_BEST)) || 0;
+  let profile = loadProfile();
+  let armed = null; // poder preparado: 'bomb' | 'hammer'
+  let powerHover = null; // casilla bajo el cursor con un poder preparado
+  let undoSnap = null; // estado antes de la última jugada
   let cell = 32;
   let rots = [0, 0, 0];
   let drag = null;
@@ -108,6 +121,31 @@
     g.fill();
   }
 
+  // Gema atrapada: piedra lila con un diamante dorado.
+  function gemBlock(g, x, y, s, scale = 1) {
+    block(g, x, y, s, '#6f63c7', scale);
+    const cx = x + s / 2;
+    const cy = y + s / 2 + s * 0.02;
+    const r = s * 0.28 * scale;
+    g.fillStyle = '#ffd166';
+    g.beginPath();
+    g.moveTo(cx - r, cy - r * 0.35);
+    g.lineTo(cx - r * 0.55, cy - r * 0.8);
+    g.lineTo(cx + r * 0.55, cy - r * 0.8);
+    g.lineTo(cx + r, cy - r * 0.35);
+    g.lineTo(cx, cy + r * 0.9);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#fff4cf';
+    g.beginPath();
+    g.moveTo(cx - r * 0.55, cy - r * 0.8);
+    g.lineTo(cx + r * 0.1, cy - r * 0.8);
+    g.lineTo(cx - r * 0.2, cy - r * 0.35);
+    g.lineTo(cx - r, cy - r * 0.35);
+    g.closePath();
+    g.fill();
+  }
+
   function drawShape(g, typeId, rot, size) {
     const { cells } = L.shapeOf(typeId, rot);
     const color = L.PIECES[typeId].color;
@@ -171,8 +209,24 @@
         const a = popping.get(i);
         const t = a ? Math.min(1, (now - a.t0) / a.dur) : 1;
         const scale = a ? 0.7 + 0.3 * easeOutBack(t) : 1;
-        block(ctx, x * cell, y * cell, cell, state.colors[v], scale);
+        if (v === state.gemId) gemBlock(ctx, x * cell, y * cell, cell, scale);
+        else block(ctx, x * cell, y * cell, cell, state.colors[v], scale);
       }
+    }
+
+    // Zona que afecta el poder preparado
+    if (armed && powerHover) {
+      const r = armed === 'bomb' ? 1 : 0;
+      const x0 = Math.max(0, powerHover.x - r);
+      const y0 = Math.max(0, powerHover.y - r);
+      const x1 = Math.min(n - 1, powerHover.x + r);
+      const y1 = Math.min(n - 1, powerHover.y + r);
+      ctx.fillStyle = 'rgba(255,209,102,.28)';
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3;
+      roundRect(ctx, x0 * cell + 2, y0 * cell + 2, (x1 - x0 + 1) * cell - 4, (y1 - y0 + 1) * cell - 4, cell * 0.25);
+      ctx.fill();
+      ctx.stroke();
     }
 
     // Vista previa al arrastrar
@@ -201,7 +255,8 @@
       const t = (now - a.t0) / a.dur;
       a.cells.forEach((c) => {
         ctx.globalAlpha = 1 - t;
-        block(ctx, (c.idx % n) * cell, Math.floor(c.idx / n) * cell, cell, t < 0.25 ? '#ffffff' : c.color, 1 + t * 0.3);
+        const col = t < 0.25 ? '#ffffff' : c.gem ? '#ffd166' : c.color;
+        block(ctx, (c.idx % n) * cell, Math.floor(c.idx / n) * cell, cell, col, 1 + t * 0.3);
       });
       ctx.globalAlpha = 1;
     }
@@ -288,8 +343,13 @@
 
   function bindSlot(slot, i) {
     slot.addEventListener('pointerdown', (e) => {
-      if (state.over || drag) return;
+      if (drag) return;
       audio();
+      if (armed) {
+        armed = null;
+        updateHud();
+      }
+      if (state.over) return;
       if (discardMode) {
         doDiscard(i);
         return;
@@ -381,69 +441,228 @@
     kick();
   }
 
+  function centroid(idxs) {
+    const n = state.size;
+    const xs = idxs.map((i) => (i % n) + 0.5);
+    const ys = idxs.map((i) => Math.floor(i / n) + 0.5);
+    return [(xs.reduce((a, b) => a + b) / xs.length) * cell, (ys.reduce((a, b) => a + b) / ys.length) * cell];
+  }
+
+  function burst(cleared) {
+    const n = state.size;
+    anims.push({ kind: 'flash', cells: cleared, t0: performance.now(), dur: 420 });
+    cleared.forEach((c) => {
+      const cx = ((c.idx % n) + 0.5) * cell;
+      const cy = (Math.floor(c.idx / n) + 0.5) * cell;
+      for (let k = 0; k < (c.gem ? 7 : 3); k++) {
+        const life = 30 + Math.random() * 20;
+        particles.push({
+          x: cx,
+          y: cy,
+          vx: (Math.random() - 0.5) * 7,
+          vy: -Math.random() * 7 - 1,
+          s: Math.max(3, cell * 0.22),
+          color: c.gem ? '#ffd166' : c.color,
+          life,
+          max: life,
+        });
+      }
+    });
+  }
+
+  function shake() {
+    canvas.classList.remove('shake');
+    void canvas.offsetWidth;
+    canvas.classList.add('shake');
+  }
+
   function drop() {
     const { type, rot, ox, oy } = drag;
+    const snap = L.serialize(state);
     const res = L.place(state, type, rot, ox, oy);
     if (!res) return;
+    undoSnap = snap;
     const n = state.size;
-    const now = performance.now();
-    anims.push({ kind: 'pop', cells: res.idxs, t0: now, dur: 180 });
+    anims.push({ kind: 'pop', cells: res.idxs, t0: performance.now(), dur: 180 });
     sfx.place(L.PIECES[type].area);
     buzz(8);
 
-    const centroid = (idxs) => {
-      const xs = idxs.map((i) => (i % n) + 0.5);
-      const ys = idxs.map((i) => Math.floor(i / n) + 0.5);
-      return [(xs.reduce((a, b) => a + b) / xs.length) * cell, (ys.reduce((a, b) => a + b) / ys.length) * cell];
-    };
-
     if (res.cleared.length) {
-      anims.push({ kind: 'flash', cells: res.cleared, t0: now, dur: 420 });
-      res.cleared.forEach((c) => {
-        const cx = ((c.idx % n) + 0.5) * cell;
-        const cy = (Math.floor(c.idx / n) + 0.5) * cell;
-        for (let k = 0; k < 3; k++) {
-          const life = 30 + Math.random() * 20;
-          particles.push({
-            x: cx,
-            y: cy,
-            vx: (Math.random() - 0.5) * 7,
-            vy: -Math.random() * 7 - 1,
-            s: Math.max(3, cell * 0.22),
-            color: c.color,
-            life,
-            max: life,
-          });
-        }
-      });
+      burst(res.cleared);
       const [cx, cy] = centroid(res.cleared.map((c) => c.idx));
       floatText('+' + res.gained, cx, cy, res.cleared.length >= 16 ? 'big' : '');
       if (res.combo >= 2) setTimeout(() => floatText('RACHA ×' + res.combo, cx, cy - cell * 1.2, 'combo'), 120);
+      if (res.gemsFreed) setTimeout(() => floatText('+' + res.gemsFreed + ' ◆', cx, cy + cell, 'gem'), 200);
       if (res.boardClean) setTimeout(() => floatText('¡TABLERO LIMPIO!', (n * cell) / 2, (n * cell) / 2, 'big'), 250);
       if (res.starGained) {
-        setTimeout(() => floatText('+★', cx, cy + cell, 'big'), 300);
+        setTimeout(() => floatText('+★', cx, cy + cell * 2, 'big'), 300);
         sfx.star();
       }
       sfx.clear(res.combo);
       buzz(res.cleared.length >= 16 ? [20, 40, 30] : 18);
-      if (res.cleared.length >= 16) {
-        canvas.classList.remove('shake');
-        void canvas.offsetWidth;
-        canvas.classList.add('shake');
-      }
+      if (res.cleared.length >= 16) shake();
     } else {
       const [cx, cy] = centroid(res.idxs);
       floatText('+' + res.gained, cx, cy);
     }
 
+    reward(res);
     afterMove();
   }
 
   function doDiscard(i) {
+    const snap = L.serialize(state);
     if (!L.discard(state, state.offer[i])) return;
+    undoSnap = snap;
     discardMode = false;
     sfx.rotate();
     afterMove();
+  }
+
+  // ---------- Poderes ----------
+  function renderPowers() {
+    const bar = $('powers');
+    bar.innerHTML = '';
+    const d = document.createElement('button');
+    d.className = 'power star' + (discardMode ? ' armed' : '');
+    d.id = 'pw-discard';
+    d.innerHTML = ICONS.star + `<span class="count">${state.stars}</span>`;
+    d.setAttribute('aria-label', `Descartar una pieza (${state.stars} estrellas)`);
+    d.title = 'Descartar una pieza';
+    d.disabled = state.stars === 0 || state.won;
+    d.addEventListener('click', toggleDiscard);
+    bar.append(d);
+    for (const p of L.POWERS) {
+      const count = profile.powers[p] || 0;
+      const b = document.createElement('button');
+      b.className = 'power' + (armed === p ? ' armed' : '');
+      b.id = 'pw-' + p;
+      b.innerHTML = ICONS[p] + `<span class="count">${count}</span>`;
+      b.setAttribute('aria-label', `${POWER_NAMES[p]} (${count})`);
+      b.title = POWER_NAMES[p];
+      b.disabled = count === 0 || (p === 'undo' && !undoSnap) || state.won;
+      b.addEventListener('click', () => pressPower(p));
+      bar.append(b);
+    }
+  }
+
+  function pressPower(p) {
+    if ((profile.powers[p] || 0) <= 0 || state.won) return;
+    audio();
+    if (p === 'undo') {
+      if (!undoSnap) return;
+      state = L.deserialize(undoSnap);
+      undoSnap = null;
+      profile.powers.undo--;
+      saveProfile();
+      armed = null;
+      discardMode = false;
+      fx.innerHTML = '';
+      sfx.rotate();
+      afterMove();
+      return;
+    }
+    armed = armed === p ? null : p;
+    discardMode = false;
+    sfx.rotate();
+    renderTray();
+    updateHud();
+    kick();
+  }
+
+  function boardCell(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / cell);
+    const y = Math.floor((e.clientY - r.top) / cell);
+    if (x < 0 || y < 0 || x >= state.size || y >= state.size) return null;
+    return { x, y };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!armed) return;
+    const c = boardCell(e);
+    if (!c) return;
+    const snap = L.serialize(state);
+    const res = armed === 'bomb' ? L.bomb(state, c.x, c.y) : L.hammer(state, c.y * state.size + c.x);
+    if (!res) {
+      floatText('Aquí no hay nada', (c.x + 0.5) * cell, (c.y + 0.5) * cell);
+      return;
+    }
+    undoSnap = snap;
+    profile.powers[armed]--;
+    const used = armed;
+    armed = null;
+    powerHover = null;
+    burst(res.cleared);
+    if (used === 'bomb') {
+      shake();
+      tone(90, 0.35, 'sawtooth', 0.12);
+      buzz([30, 30, 30]);
+    } else {
+      tone(180, 0.1, 'square', 0.08);
+      buzz(20);
+    }
+    const [cx, cy] = centroid(res.cleared.map((k) => k.idx));
+    floatText('+' + res.gained, cx, cy);
+    if (res.gemsFreed) setTimeout(() => floatText('+' + res.gemsFreed + ' ◆', cx, cy + cell, 'gem'), 150);
+    reward({ ...res, combo: 0, biggest: 0, boardClean: false });
+    afterMove();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!armed) return;
+    const c = boardCell(e);
+    if (c?.x !== powerHover?.x || c?.y !== powerHover?.y) {
+      powerHover = c;
+      kick();
+    }
+  });
+  canvas.addEventListener('pointerleave', () => {
+    powerHover = null;
+    kick();
+  });
+
+  // ---------- Progreso, misiones y recompensas ----------
+  function loadProfile() {
+    const base = L.newProfile();
+    try {
+      const p = JSON.parse(store.get(KEY_PROFILE) || 'null');
+      if (p && Array.isArray(p.missions)) return { ...base, ...p, powers: { ...base.powers, ...p.powers } };
+    } catch (e) { /* perfil dañado: empezar de cero */ }
+    base.best = Number(store.get(KEY_BEST)) || 0;
+    return base;
+  }
+
+  function saveProfile() {
+    store.set(KEY_PROFILE, JSON.stringify(profile));
+  }
+
+  function reward(res) {
+    const out = L.recordMove(profile, state, res);
+    saveProfile();
+    let k = 0;
+    out.done.forEach((m) => setTimeout(() => toast('¡Misión cumplida!', m.text, m.reward), 500 + 1100 * k++));
+    out.levelUps.forEach((u) => setTimeout(() => toast(`¡Subes a nivel ${u.level}!`, 'Regalo de nivel', u.gift), 500 + 1100 * k++));
+  }
+
+  function toast(title, text, power) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    const ico = document.createElement('span');
+    ico.className = 'toast-ico';
+    ico.innerHTML = ICONS[power] || ICONS.gem;
+    const body = document.createElement('div');
+    const b = document.createElement('b');
+    b.textContent = title;
+    const small = document.createElement('small');
+    small.textContent = power ? `${text} · +1 ${POWER_NAMES[power]}` : text;
+    body.append(b, small);
+    el.append(ico, body);
+    $('toasts').append(el);
+    sfx.star();
+    buzz([10, 40, 10]);
+    renderPowers();
+    setTimeout(() => el.classList.add('out'), 2600);
+    setTimeout(() => el.remove(), 3100);
   }
 
   function afterMove() {
@@ -456,17 +675,25 @@
     renderTray();
     updateHud();
     kick();
-    if (state.over) setTimeout(showOver, 800);
+    if (state.won) setTimeout(showWin, 700);
+    else if (state.over) setTimeout(showOver, 800);
   }
 
   // ---------- Marcadores ----------
   function updateHud() {
     $('score').textContent = state.score;
-    if (state.score > best) {
-      best = state.score;
-      store.set(KEY_BEST, String(best));
+    if (!state.level && state.score > profile.best) {
+      profile.best = state.score;
+      saveProfile();
     }
-    $('best').textContent = best;
+    $('best-label').textContent = state.level ? 'Reto' : 'Récord';
+    $('best').textContent = state.level ? state.level + ' / ' + LEVELS.length : profile.best;
+
+    const goal = $('goal');
+    goal.hidden = !state.level;
+    $('goal-gems').textContent = state.gems;
+    $('goal-moves').textContent = state.movesLeft;
+    goal.classList.toggle('danger', !!state.level && state.movesLeft <= 3);
 
     const combo = $('combo');
     combo.hidden = state.combo === 0;
@@ -474,52 +701,223 @@
     combo.title = 'La próxima explosión vale ×' + (state.combo + 1);
     $('combo-dots').textContent = '●'.repeat(state.grace) + '○'.repeat(L.COMBO_GRACE - state.grace);
 
-    const stars = $('stars');
-    stars.textContent = '★'.repeat(state.stars) + '☆'.repeat(L.MAX_STARS - state.stars) + (discardMode ? ' Cancelar' : ' Descartar');
-    stars.disabled = state.stars === 0;
-    stars.classList.toggle('armed', discardMode);
-
-    const stuck = !state.offer.some((t) => L.canFitAnywhere(state, t));
-    $('hint').textContent = discardMode
-      ? 'Toca la pieza que quieres descartar'
-      : stuck && state.stars > 0
-        ? 'Ninguna pieza cabe: toca ★ para descartar una'
-        : 'Arrastra una pieza al tablero · tócala para girarla';
+    const stuck = L.isStuck(state);
+    $('hint').textContent = armed
+      ? armed === 'bomb'
+        ? 'Toca el tablero: la bomba rompe un 3×3'
+        : 'Toca la casilla que quieres romper'
+      : discardMode
+        ? 'Toca la pieza que quieres descartar'
+        : stuck && state.stars > 0
+          ? 'Ninguna pieza cabe: usa ★ para descartar una'
+          : 'Arrastra una pieza al tablero · tócala para girarla';
+    renderPowers();
   }
 
   function save() {
-    store.set(KEY_GAME, L.serialize(state));
+    if (!state.level) store.set(KEY_GAME, L.serialize(state));
   }
 
-  function newGame(size = state ? state.size : 8) {
-    state = L.newGame(size);
+  function resetView() {
     rots = [0, 0, 0];
     discardMode = false;
+    armed = null;
+    undoSnap = null;
     anims = [];
     particles = [];
     fx.innerHTML = '';
-    save();
+    ['home', 'levels', 'win', 'over'].forEach(close);
     renderTray();
     layout();
     updateHud();
+    if (!state.won && state.stars === 0 && L.isStuck(state)) {
+      state.over = true;
+      setTimeout(showOver, 500);
+    }
+    if (!store.get(KEY_HELP)) {
+      store.set(KEY_HELP, '1');
+      if (store.get(KEY_HELP)) open('help');
+    }
+  }
+
+  function newGame(size = boardSize()) {
+    state = L.newGame(size);
+    save();
+    resetView();
+  }
+
+  function continueEndless() {
+    const saved = loadEndless();
+    if (saved) {
+      state = saved;
+      resetView();
+    } else newGame();
+  }
+
+  function loadEndless() {
+    try {
+      const s = L.deserialize(store.get(KEY_GAME) || 'null');
+      return s && !s.over && !s.level ? s : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function boardSize() {
+    return Number(store.get('cuadricula-v2-size')) === 16 ? 16 : 8;
+  }
+
+  function startLevel(n) {
+    state = L.newGame(8, LEVELS[n - 1]);
+    resetView();
   }
 
   function showOver() {
+    if (!state.over || state.won) return;
     sfx.over();
+    const outOfMoves = !!state.level && state.movesLeft <= 0;
+    $('over-title').textContent = outOfMoves ? '¡Sin jugadas!' : '¡Sin hueco!';
     $('final-score').textContent = state.score;
-    $('record').hidden = !(state.score > 0 && state.score >= best);
-    $('final-stats').textContent = `${state.turns} jugadas · ${state.clears} explosiones`;
+    $('record').hidden = !!state.level || !(state.score > 0 && state.score >= profile.best);
+    $('final-stats').textContent = state.level
+      ? `Te ${state.gems === 1 ? 'faltó 1 gema' : `faltaron ${state.gems} gemas`}`
+      : `${state.turns} jugadas · ${state.clears} explosiones`;
+
+    const btns = $('rescue-btns');
+    btns.innerHTML = '';
+    for (const p of L.POWERS) {
+      const count = profile.powers[p] || 0;
+      if (!count || (p === 'undo' && !undoSnap) || (outOfMoves && p !== 'undo')) continue;
+      const b = document.createElement('button');
+      b.className = 'power';
+      b.innerHTML = ICONS[p] + `<span class="count">${count}</span>`;
+      b.setAttribute('aria-label', 'Usar ' + POWER_NAMES[p]);
+      b.addEventListener('click', () => {
+        close('over');
+        pressPower(p);
+      });
+      btns.append(b);
+    }
+    $('rescue').hidden = !btns.children.length;
+    $('again-btn').textContent = state.level ? 'Reintentar' : 'Otra partida';
     open('over');
+  }
+
+  function showWin() {
+    const lv = LEVELS[state.level - 1];
+    const used = lv.moves - state.movesLeft;
+    const stars = L.levelStars(lv, used);
+    const prev = profile.levelStars[lv.n] || 0;
+    profile.levelStars[lv.n] = Math.max(prev, stars);
+    if (!prev) {
+      const gift = L.POWERS[lv.n % L.POWERS.length];
+      profile.powers[gift] = (profile.powers[gift] || 0) + 1;
+      const ups = L.addXp(profile, 100 + lv.n * 20);
+      setTimeout(() => toast('¡Reto nuevo superado!', `Reto ${lv.n}`, gift), 900);
+      ups.forEach((u, k) => setTimeout(() => toast(`¡Subes a nivel ${u.level}!`, 'Regalo de nivel', u.gift), 2000 + k * 1100));
+    }
+    saveProfile();
+
+    const box = $('win-stars');
+    box.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const s = document.createElement('span');
+      s.textContent = '★';
+      s.className = i < stars ? 'on' : '';
+      s.style.animationDelay = 0.15 + i * 0.25 + 's';
+      box.append(s);
+    }
+    $('win-text').textContent = `Reto ${lv.n} en ${used} jugadas · marca ${lv.par}${stars < 3 ? ' (iguálala para 3★)' : ''}`;
+    $('next-btn').hidden = lv.n >= LEVELS.length;
+    [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.22, 'sine', 0.07, i * 0.09));
+    buzz([20, 60, 20, 60, 40]);
+    open('win');
+  }
+
+  // ---------- Inicio y mapa de retos ----------
+  function totalStars() {
+    return Object.values(profile.levelStars).reduce((a, b) => a + b, 0);
+  }
+
+  function openHome() {
+    endDrag();
+    armed = null;
+    $('p-level').textContent = profile.level;
+    const need = L.xpForLevel(profile.level);
+    $('p-xp-fill').style.width = Math.min(100, (profile.xp / need) * 100) + '%';
+    $('p-xp').textContent = `${Math.floor(profile.xp)} / ${need} XP`;
+    const saved = loadEndless();
+    $('endless-label').textContent = saved ? 'Continuar' : 'Jugar';
+    $('endless-sub').textContent = `Infinito · récord ${profile.best}`;
+    $('levels-sub').textContent = `${totalStars()} / ${LEVELS.length * 3} ★`;
+
+    const ul = $('missions');
+    ul.innerHTML = '';
+    for (const m of profile.missions) {
+      const li = document.createElement('li');
+      const text = document.createElement('div');
+      text.className = 'm-text';
+      text.textContent = m.text;
+      const bar = document.createElement('div');
+      bar.className = 'm-bar';
+      const fill = document.createElement('div');
+      fill.style.width = Math.min(100, (m.progress / m.target) * 100) + '%';
+      bar.append(fill);
+      const prog = document.createElement('small');
+      prog.textContent = `${Math.min(m.progress, m.target)} / ${m.target}`;
+      const rew = document.createElement('span');
+      rew.className = 'm-reward';
+      rew.innerHTML = ICONS[m.reward];
+      rew.title = 'Premio: ' + POWER_NAMES[m.reward];
+      li.append(text, rew, bar, prog);
+      ul.append(li);
+    }
+
+    const inv = $('inventory');
+    inv.innerHTML = '';
+    for (const p of L.POWERS) {
+      const d = document.createElement('div');
+      d.className = 'inv';
+      d.innerHTML = ICONS[p];
+      const t = document.createElement('span');
+      t.textContent = `${POWER_NAMES[p]} ×${profile.powers[p] || 0}`;
+      d.append(t);
+      inv.append(d);
+    }
+
+    const size = boardSize();
+    document.querySelectorAll('[data-size]').forEach((b) =>
+      b.setAttribute('aria-pressed', String(Number(b.dataset.size) === size))
+    );
+    $('sound-btn').textContent = 'Sonido: ' + (soundOn ? 'sí' : 'no');
+    open('home');
+  }
+
+  function openLevels() {
+    const grid = $('level-grid');
+    grid.innerHTML = '';
+    for (const lv of LEVELS) {
+      const got = profile.levelStars[lv.n] || 0;
+      const unlocked = lv.n === 1 || (profile.levelStars[lv.n - 1] || 0) > 0;
+      const b = document.createElement('button');
+      b.className = 'lv' + (got ? ' done' : '') + (unlocked && !got ? ' current' : '');
+      b.disabled = !unlocked;
+      const num = document.createElement('b');
+      num.textContent = unlocked ? lv.n : '🔒︎';
+      const st = document.createElement('small');
+      st.textContent = unlocked ? '★'.repeat(got) + '☆'.repeat(3 - got) : '';
+      b.append(num, st);
+      b.setAttribute('aria-label', `Reto ${lv.n}${unlocked ? `, ${got} estrellas` : ', bloqueado'}`);
+      b.addEventListener('click', () => startLevel(lv.n));
+      grid.append(b);
+    }
+    open('levels');
+    const cur = grid.querySelector('.current');
+    if (cur) cur.scrollIntoView({ block: 'center' });
   }
 
   // ---------- Ventanas ----------
   function open(id) {
-    if (id === 'menu') {
-      document.querySelectorAll('[data-size]').forEach((b) =>
-        b.setAttribute('aria-pressed', String(Number(b.dataset.size) === state.size))
-      );
-      $('sound-btn').textContent = soundOn ? 'Sí' : 'No';
-    }
     $(id).hidden = false;
   }
   function close(id) {
@@ -528,39 +926,48 @@
 
   document.querySelectorAll('.overlay').forEach((o) => {
     o.addEventListener('click', (e) => {
-      if (e.target === o && o.id !== 'over') close(o.id);
+      if (e.target === o && (o.id === 'help' || o.id === 'levels')) close(o.id);
     });
     o.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(o.id)));
   });
 
   $('help-btn').addEventListener('click', () => open('help'));
-  $('menu-btn').addEventListener('click', () => open('menu'));
-  $('new-btn').addEventListener('click', () => {
-    close('menu');
-    newGame();
-  });
-  $('again-btn').addEventListener('click', () => {
+  $('home-help').addEventListener('click', () => open('help'));
+  $('menu-btn').addEventListener('click', openHome);
+  $('play-endless').addEventListener('click', continueEndless);
+  $('play-levels').addEventListener('click', openLevels);
+  $('again-btn').addEventListener('click', () => (state.level ? startLevel(state.level) : newGame()));
+  $('over-home').addEventListener('click', () => {
     close('over');
-    newGame();
+    openHome();
+  });
+  $('next-btn').addEventListener('click', () => startLevel(state.level + 1));
+  $('win-retry').addEventListener('click', () => startLevel(state.level));
+  $('win-home').addEventListener('click', () => {
+    close('win');
+    openHome();
   });
   document.querySelectorAll('[data-size]').forEach((b) =>
     b.addEventListener('click', () => {
-      close('menu');
+      store.set('cuadricula-v2-size', b.dataset.size);
       newGame(Number(b.dataset.size));
     })
   );
   $('sound-btn').addEventListener('click', () => {
     soundOn = !soundOn;
     store.set(KEY_SOUND, soundOn ? '1' : '0');
-    $('sound-btn').textContent = soundOn ? 'Sí' : 'No';
+    $('sound-btn').textContent = 'Sonido: ' + (soundOn ? 'sí' : 'no');
     sfx.rotate();
   });
-  $('stars').addEventListener('click', () => {
-    if (state.stars === 0 || state.over) return;
+  function toggleDiscard() {
+    if (state.stars === 0 || state.won) return;
+    audio();
     discardMode = !discardMode;
+    armed = null;
+    sfx.rotate();
     renderTray();
     updateHud();
-  });
+  }
 
   // Teclado / ratón mientras se arrastra: R o clic derecho gira.
   function rotateDragging() {
@@ -576,7 +983,11 @@
     if (e.key === 'r' || e.key === 'R') rotateDragging();
     if (e.key === 'Escape') {
       endDrag();
-      ['help', 'menu'].forEach(close);
+      armed = null;
+      discardMode = false;
+      ['help', 'levels'].forEach(close);
+      updateHud();
+      kick();
     }
   });
   window.addEventListener('contextmenu', (e) => {
@@ -596,20 +1007,11 @@
   });
 
   // ---------- Arranque ----------
-  const saved = store.get(KEY_GAME);
-  let loaded = null;
-  try { loaded = saved && L.deserialize(saved); } catch (e) { loaded = null; }
-  if (loaded && !loaded.over) {
-    state = loaded;
-    renderTray();
-    layout();
-    updateHud();
-  } else {
-    newGame(8);
-  }
-  if (!store.get(KEY_HELP)) {
-    store.set(KEY_HELP, '1');
-    if (store.get(KEY_HELP)) open('help');
-  }
+  document.querySelector('.gem-ico').innerHTML = ICONS.gem;
+  state = loadEndless() || L.newGame(boardSize());
+  renderTray();
+  layout();
+  updateHud();
+  openHome();
   if (document.fonts) document.fonts.ready.then(() => { renderTray(); layout(); });
 })();

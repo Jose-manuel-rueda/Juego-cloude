@@ -136,4 +136,74 @@ test('fin de partida solo sin estrellas y sin hueco', () => {
   assert.strictEqual(s.offer.some((t) => L.canFitAnywhere(s, t)), false);
 });
 
+const LEVELS = require('../levels.js');
+
+test('hay 30 retos y cada uno tiene gemas y jugadas de sobra', () => {
+  assert.strictEqual(LEVELS.length, 30);
+  for (const lv of LEVELS) {
+    assert.ok(lv.gems.length > 0);
+    assert.ok(lv.moves > lv.par);
+  }
+});
+
+test('liberar todas las gemas gana el reto', () => {
+  const lv = { n: 1, gems: [0, 1], moves: 5, par: 2 };
+  const s = L.newGame(8, lv);
+  assert.strictEqual(s.gems, 2);
+  // gemas en (0,0) y (1,0): un O4 debajo y una barra de 2x... completan un 3x3 con I4 y D2
+  put(s, 'D2', 0, 2, 0); // fila 0 llena de 0..3? x=2,3
+  put(s, 'I4', 0, 0, 1);
+  const res = put(s, 'I4', 0, 0, 2);
+  assert.ok(res.gemsFreed >= 2);
+  assert.ok(s.won && s.over);
+});
+
+test('en un reto, quedarse sin jugadas termina la partida', () => {
+  const s = L.newGame(8, { n: 1, gems: [63], moves: 1, par: 1 });
+  put(s, 'D2', 0, 0, 0);
+  assert.ok(s.over && !s.won);
+});
+
+test('bomba y martillo quitan casillas sin gastar jugada', () => {
+  const s = L.newGame(8, { n: 1, gems: [9, 10], moves: 5, par: 1 });
+  const b = L.bomb(s, 1, 1);
+  assert.strictEqual(b.cleared.length, 2);
+  assert.ok(s.won);
+  const t = L.newGame(8);
+  put(t, 'O4', 0, 0, 0);
+  assert.strictEqual(L.hammer(t, 0).cleared.length, 1);
+  assert.strictEqual(L.hammer(t, 0), null);
+});
+
+test('misiones dan poderes y se reemplazan', () => {
+  const p = L.newProfile();
+  const bombs = p.powers.bomb;
+  const s = L.newGame(8);
+  const m = p.missions.find((x) => x.type === 'clears');
+  m.progress = m.target - 1;
+  put(s, 'R8', 0, 0, 0);
+  const res = put(s, 'R8', 0, 0, 2);
+  const out = L.recordMove(p, s, res);
+  assert.strictEqual(out.done.length >= 1, true);
+  assert.ok(p.missions.every((x) => x.progress < x.target));
+  assert.ok(Object.values(p.powers).reduce((a, b) => a + b) > bombs);
+});
+
+test('subir de nivel regala un poder', () => {
+  const p = L.newProfile();
+  const total = () => Object.values(p.powers).reduce((a, b) => a + b);
+  const before = total();
+  const ups = L.addXp(p, L.xpForLevel(1));
+  assert.strictEqual(ups.length, 1);
+  assert.strictEqual(p.level, 2);
+  assert.strictEqual(total(), before + 1);
+});
+
+test('estrellas de reto según jugadas', () => {
+  const lv = { par: 10, moves: 16 };
+  assert.strictEqual(L.levelStars(lv, 9), 3);
+  assert.strictEqual(L.levelStars(lv, 13), 2);
+  assert.strictEqual(L.levelStars(lv, 16), 1);
+});
+
 console.log(`\n${passed} tests OK`);

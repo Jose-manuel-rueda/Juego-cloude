@@ -12,17 +12,17 @@
 <body>
   <div id="app">
     <header id="top">
-      <button id="menu-btn" class="icon-btn" aria-label="Menú">☰</button>
+      <button id="menu-btn" class="icon-btn" aria-label="Inicio">☰</button>
       <div class="score">
         <div id="score">0</div>
-        <div class="best">Récord <b id="best">0</b></div>
+        <div class="best"><span id="best-label">Récord</span> <b id="best">0</b></div>
       </div>
       <button id="help-btn" class="icon-btn" aria-label="Cómo se juega">?</button>
     </header>
 
     <div id="status">
+      <div id="goal" class="chip goal" hidden><span class="gem-ico"></span><b id="goal-gems">0</b> · <b id="goal-moves">0</b> jugadas</div>
       <div id="combo" class="chip" hidden>Racha <b id="combo-x">×1</b> <span id="combo-dots"></span></div>
-      <button id="stars" class="chip stars" aria-label="Estrellas para descartar"></button>
     </div>
 
     <div id="board-wrap">
@@ -30,6 +30,7 @@
       <div id="fx"></div>
     </div>
 
+    <div id="powers"></div>
     <div id="tray"></div>
     <div id="hint">Arrastra una pieza al tablero · tócala para girarla</div>
   </div>
@@ -45,42 +46,90 @@
         <li><span class="n">3</span><div>Explota varias veces seguidas para subir la <b>racha</b>: la siguiente explosión vale ×2, luego ×3… Si pasan 3 jugadas sin explotar (los puntitos ●), se pierde.</div></li>
         <li><span class="n">4</span><div>Nada es al azar: <b>la pieza que eliges decide las 3 siguientes</b>. Las ves en pequeño debajo de cada pieza.</div></li>
         <li><span class="n">5</span><div>Con una <b>★</b> puedes descartar una pieza. Ganas otra al limpiar 16 casillas de golpe.</div></li>
+        <li><span class="n">6</span><div><b>Poderes</b>: la <b>bomba</b> rompe 3×3, el <b>martillo</b> quita una casilla y <b>deshacer</b> anula tu última jugada. Se ganan cumpliendo <b>misiones</b> y subiendo de nivel.</div></li>
+        <li><span class="n">7</span><div>En <b>Retos</b> tienes que liberar todas las <b>gemas</b> con pocas jugadas. Cada reto superado abre el siguiente.</div></li>
       </ol>
-      <p class="muted">Pierdes cuando ninguna pieza cabe y no te quedan ★. La partida se guarda sola.</p>
+      <p class="muted">Pierdes cuando ninguna pieza cabe y no te quedan ★ ni poderes. La partida infinita se guarda sola.</p>
       <button class="primary" data-close>¡A jugar!</button>
     </div>
   </div>
 
-  <div id="menu" class="overlay" hidden>
-    <div class="sheet">
-      <h2>Menú</h2>
-      <div class="field">
-        <span>Tablero</span>
-        <div class="seg">
+  <div id="home" class="overlay" hidden>
+    <div class="sheet home">
+      <h1 class="logo">Cuadrícula</h1>
+      <div class="profile">
+        <div class="lvl"><small>Nivel</small><b id="p-level">1</b></div>
+        <div class="xp">
+          <div class="xp-bar"><div id="p-xp-fill"></div></div>
+          <small id="p-xp">0 / 500 XP</small>
+        </div>
+      </div>
+      <div class="modes">
+        <button id="play-endless" class="mode primary-mode">
+          <b id="endless-label">Jugar</b><small id="endless-sub">Modo infinito</small>
+        </button>
+        <button id="play-levels" class="mode">
+          <b>Retos</b><small id="levels-sub">0 / 90 ★</small>
+        </button>
+      </div>
+      <section>
+        <h3>Misiones</h3>
+        <ul id="missions" class="missions"></ul>
+      </section>
+      <section>
+        <h3>Tus poderes</h3>
+        <div id="inventory" class="inventory"></div>
+      </section>
+      <div class="settings">
+        <div class="seg" role="group" aria-label="Tablero del modo infinito">
           <button id="size-8" data-size="8">8×8</button>
           <button id="size-16" data-size="16">16×16</button>
         </div>
+        <button id="sound-btn">Sonido: sí</button>
+        <button id="home-help">Cómo se juega</button>
       </div>
-      <div class="field">
-        <span>Sonido</span>
-        <button id="sound-btn">Sí</button>
-      </div>
-      <button id="new-btn" class="primary">Nueva partida</button>
-      <button class="ghost" data-close>Seguir jugando</button>
+    </div>
+  </div>
+
+  <div id="levels" class="overlay" hidden>
+    <div class="sheet">
+      <h2>Retos</h2>
+      <p class="muted">Libera todas las <b class="gold">gemas</b> metiéndolas en un cuadrado que explote. Menos jugadas, más estrellas.</p>
+      <div id="level-grid" class="level-grid"></div>
+      <button class="ghost" data-close>Volver</button>
+    </div>
+  </div>
+
+  <div id="win" class="overlay" hidden>
+    <div class="sheet center">
+      <h2>¡Reto superado!</h2>
+      <div id="win-stars" class="win-stars"></div>
+      <p id="win-text" class="muted"></p>
+      <button id="next-btn" class="primary">Siguiente reto</button>
+      <button id="win-retry" class="ghost">Repetir</button>
+      <button id="win-home" class="ghost">Inicio</button>
     </div>
   </div>
 
   <div id="over" class="overlay" hidden>
     <div class="sheet center">
-      <h2>¡Sin hueco!</h2>
+      <h2 id="over-title">¡Sin hueco!</h2>
       <div id="record" class="record" hidden>¡Nuevo récord!</div>
       <div class="final"><span id="final-score">0</span><small>puntos</small></div>
       <div class="muted" id="final-stats"></div>
+      <div id="rescue" class="rescue" hidden>
+        <b>¿Salvar la partida?</b>
+        <div id="rescue-btns" class="rescue-btns"></div>
+      </div>
       <button id="again-btn" class="primary">Otra partida</button>
+      <button id="over-home" class="ghost">Inicio</button>
     </div>
   </div>
 
+  <div id="toasts" aria-live="polite"></div>
+
   <script src="logic.js"></script>
+  <script src="levels.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
