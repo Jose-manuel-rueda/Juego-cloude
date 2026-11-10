@@ -1,0 +1,19 @@
+{
+  "_instrucciones": "Copia este archivo con otro nombre (p. ej. terraza-armilla-2026.json). Los archivos que empiezan por _ no se publican. Solo se publica si 'publicado' es true y TODAS las fotos tienen 'autorizada': true. Las fotos van en fotos/originales y se procesan con: node tools/fotos.js",
+  "publicado": false,
+  "slug": "terraza-atico-localidad",
+  "titulo": "Filtración desde la terraza de un ático en [localidad]",
+  "servicio": "terrazas",
+  "localidad": "",
+  "fecha": "2026-01-31",
+  "tipoCliente": "Vivienda particular | Comunidad de vecinos | Negocio",
+  "problemaInicial": "Qué veía el cliente y desde cuándo (manchas, goteo, cuándo aparecía).",
+  "diagnostico": "Qué revisamos y qué encontramos: origen confirmado y cómo se confirmó.",
+  "intervencion": "Qué se hizo, con qué sistema y por qué se eligió esa opción y no otra.",
+  "resultadoComprobado": "Qué comprobación se hizo al terminar y su resultado (p. ej. prueba acordada, revisión tras las lluvias del mes siguiente). Solo hechos comprobados.",
+  "fotos": [
+    { "name": "caso-ejemplo-antes", "alt": "Terraza antes de la intervención con juntas abiertas junto al sumidero", "momento": "Antes", "autorizada": false },
+    { "name": "caso-ejemplo-despues", "alt": "Terraza terminada con el sumidero y el encuentro con el peto renovados", "momento": "Después", "autorizada": false }
+  ],
+  "testimonio": null
+}

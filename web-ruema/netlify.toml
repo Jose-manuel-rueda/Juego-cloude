@@ -1,0 +1,12 @@
+# Netlify: configura "Base directory" = web-ruema en el panel del sitio.
+# Producción (rama principal) genera la versión pública y FALLA si faltan datos obligatorios.
+# Vistas previas y ramas generan la versión de pruebas (noindex).
+[build]
+  command = "node build.js"
+  publish = "dist"
+
+[context.production]
+  command = "node build.js --production"
+
+[build.environment]
+  NODE_VERSION = "20"

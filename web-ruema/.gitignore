@@ -1,0 +1,4 @@
+dist/
+.test/
+.perf/
+node_modules/

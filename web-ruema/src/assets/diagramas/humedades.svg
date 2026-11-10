@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-labelledby="t"><title id="t">Filtración, condensación y capilaridad</title>
+<defs><pattern id="h" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0v8" stroke="#B9B2A5" stroke-width="2"/></pattern>
+<pattern id="s" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.4" fill="#8C7F6A"/><circle cx="8" cy="7" r="1" fill="#8C7F6A"/></pattern>
+<linearGradient id="cap" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8C7F6A" stop-opacity=".55"/><stop offset="1" stop-color="#8C7F6A" stop-opacity="0"/></linearGradient>
+<marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#154A8A"/></marker></defs>
+<rect x="0" y="330" width="640" height="70" fill="url(#s)"/><rect x="0" y="330" width="640" height="70" fill="#E8E2D6" opacity=".6"/>
+<path d="M0 330h640" stroke="#1F2429" stroke-width="2"/>
+<rect x="80" y="104" width="40" height="252" fill="url(#h)" stroke="#1F2429" stroke-width="2"/>
+<rect x="520" y="104" width="40" height="252" fill="url(#h)" stroke="#1F2429" stroke-width="2"/>
+<rect x="60" y="80" width="520" height="28" fill="url(#h)" stroke="#1F2429" stroke-width="2"/>
+<polyline points="60,78 580,78" stroke="#154A8A" stroke-width="4" stroke-dasharray="60 10 400 0"/>
+<rect x="80" y="250" width="40" height="80" fill="url(#cap)"/>
+<rect x="520" y="250" width="40" height="80" fill="url(#cap)"/>
+<g stroke="#9DB6D6" stroke-width="2" stroke-linecap="round"><path d="M150 18l-10 22M200 28l-10 22M250 14l-10 22M300 26l-10 22M420 18l-10 22M470 28l-10 22"/></g>
+<path d="M190 52 C 196 70 196 92 200 128" stroke="#154A8A" stroke-width="3" fill="none" marker-end="url(#a)"/>
+<path d="M200 140c0 0-7 10-7 14a7 7 0 0 0 14 0c0-4-7-14-7-14z" fill="#2F6BB8"/>
+<ellipse cx="200" cy="114" rx="40" ry="5" fill="#B8A98F" opacity=".6"/>
+<g stroke="#154A8A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".8"><path d="M420 280c-10-12 10-20 0-32s10-20 0-32"/><path d="M450 286c-10-12 10-20 0-32s10-20 0-32"/></g>
+<path d="M455 196 C 480 170 498 150 512 124" stroke="#154A8A" stroke-width="3" fill="none" marker-end="url(#a)"/>
+<g fill="#2F6BB8"><circle cx="512" cy="116" r="3"/><circle cx="508" cy="130" r="2.5"/><circle cx="514" cy="140" r="2"/><circle cx="504" cy="120" r="2"/></g>
+<g stroke="#154A8A" stroke-width="3" marker-end="url(#a)"><path d="M92 370v-60"/><path d="M108 384v-90"/><path d="M532 370v-60"/><path d="M548 384v-90"/></g>
+<rect x="150" y="300" width="80" height="30" rx="3" fill="#D9D3C7" stroke="#1F2429" stroke-width="1.5"/>
+<g font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">
+<circle cx="230" cy="44" r="14" fill="#154A8A"/><text x="230" y="49">1</text>
+<circle cx="400" cy="190" r="14" fill="#154A8A"/><text x="400" y="195">2</text>
+<circle cx="150" cy="262" r="14" fill="#154A8A"/><text x="150" y="267">3</text></g>
+</svg>
